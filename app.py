@@ -160,7 +160,7 @@ def predict_churn(features_df: pd.DataFrame):
 
 def main():
     st.set_page_config(page_title="Churn Prediction Dashboard", layout="wide")
-    st.title("Dự đoán khách không quay lại trong 30 ngày (placeholder)")
+    st.title("Dự đoán khả năng khách hàng không quay lại mua hàng ít nhất 30 ngày tới – ABC Pizza")
 
     st.markdown("""
     Hướng dẫn nhanh:
