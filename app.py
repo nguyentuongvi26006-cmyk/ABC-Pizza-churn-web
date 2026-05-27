@@ -9,13 +9,13 @@ import plotly.express as px
 # App: Churn prediction placeholder
 # Mục tiêu: Dự đoán khả năng khách hàng KHÔNG quay lại mua hàng trong 30 ngày
 # - User upload CSV gồm `customer_id` và `order_datetime`
-# - Lookup lịch sử mua hàng trong `Data/processed_data.csv`
+# - Lookup lịch sử mua hàng trong `data/processed_data.csv`
 # - Tạo feature tạm: recency, frequency, monetary
 # - Placeholder `predict_churn()` để thay bằng model sau này
 # File này chứa cả backend + frontend
 # -----------------------------
 
-PROCESSED_DATA_PATH = os.path.join("Data", "processed_data.csv")
+PROCESSED_DATA_PATH = os.path.join("data", "processed_data.csv")
 
 
 def load_processed_data(path=PROCESSED_DATA_PATH):
