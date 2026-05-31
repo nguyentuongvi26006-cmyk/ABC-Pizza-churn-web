@@ -12,9 +12,9 @@ import plotly.express as px
 # - Model: Model/best_model.pkl và Model/preprocessing_pipeline.pkl
 # - Output: báo cáo dự đoán `return_probability`, `risk_group`, bảng và biểu đồ
 
-PROCESSED_PATH = os.path.join("08. Mock Project", "Data", "processed_data.csv")
-MODEL_PATH = os.path.join("08. Mock Project", "Model", "best_model.pkl")
-PREPROC_PATH = os.path.join("08. Mock Project", "Model", "preprocessing_pipeline.pkl")
+PROCESSED_PATH = os.path.join("Data", "processed_data.csv")
+MODEL_PATH = os.path.join("Model", "best_model.pkl")
+PREPROC_PATH = os.path.join("Model", "preprocessing_pipeline.pkl")
 
 
 def load_processed_data(path=PROCESSED_PATH):
