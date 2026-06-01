@@ -15,6 +15,7 @@ import plotly.express as px
 PROCESSED_PATH = os.path.join("Data", "processed_data.csv")
 MODEL_PATH = os.path.join("Model", "best_model.pkl")
 PREPROC_PATH = os.path.join("Model", "preprocessing_pipeline.pkl")
+THRESHOLD_PATH = os.path.join("Model", "optimal_threshold.pkl")
 
 
 def load_processed_data(path=PROCESSED_PATH):
@@ -173,23 +174,40 @@ def compute_features(upload_df: pd.DataFrame, hist_df: pd.DataFrame):
     return feat_df
 
 
-def load_model_and_preprocessor(model_path=MODEL_PATH, preproc_path=PREPROC_PATH):
+def load_model_and_preprocessor(
+    model_path=MODEL_PATH,
+    preproc_path=PREPROC_PATH,
+    threshold_path=THRESHOLD_PATH
+):
     model = None
     preproc = None
+    threshold = 0.5
+
     if os.path.exists(model_path) and os.path.exists(preproc_path):
         try:
             model = joblib.load(model_path)
             preproc = joblib.load(preproc_path)
+
+            if os.path.exists(threshold_path):
+                threshold_data = joblib.load(threshold_path)
+
+                if isinstance(threshold_data, dict):
+                    threshold = threshold_data.get("optimal_threshold", 0.5)
+                else:
+                    threshold = float(threshold_data)
+
         except Exception as e:
-            st.warning(f"Lỗi khi load model/preprocessor: {e}")
+            st.warning(f"Lỗi khi load model/preprocessor/threshold: {e}")
             model = None
             preproc = None
+            threshold = 0.5
     else:
-        st.warning("Model hoặc preprocessing pipeline không tìm thấy trong thư mục Model/. Ứng dụng sẽ không dùng model thực.")
-    return model, preproc
+        st.warning("Model hoặc preprocessing pipeline không tìm thấy trong thư mục Model/. Ứng dụng sẽ không dùng model thật.")
+
+    return model, preproc, threshold
 
 
-def predict_return_probability(feature_df: pd.DataFrame, model, preproc):
+def predict_return_probability(feature_df: pd.DataFrame, model, preproc, threshold=0.5):
     """Dùng model + preproc để dự đoán return_probability. Nếu model không có -> fallback heuristic."""
     df = feature_df.copy()
     if model is not None and preproc is not None:
@@ -223,6 +241,10 @@ def predict_return_probability(feature_df: pd.DataFrame, model, preproc):
             return "Loyal"
 
     df["risk_group"] = df["return_probability"].apply(rg)
+    # prediction theo optimal_threshold
+    df["prediction_by_threshold"] = df["return_probability"].apply(
+    lambda p: "Quay lại" if p >= threshold else "Không quay lại")
+    
 
     # recommendation ngắn
     def rec(row):
@@ -289,10 +311,10 @@ def main():
     st.success("Tạo feature xong")
 
     # load model & preproc
-    model, preproc = load_model_and_preprocessor()
+    model, preproc, threshold = load_model_and_preprocessor()
 
     # dự đoán
-    result = predict_return_probability(feat_df, model, preproc)
+    result = predict_return_probability(feat_df, model, preproc, threshold)
 
     # KPI
     total = len(result)
