@@ -264,8 +264,9 @@ def main():
     st.title("Dự đoán khả năng khách hàng không quay lại mua hàng ít nhất 30 ngày tới")
 
     st.markdown("""
-    Upload CSV với 2 cột: `customer_id`, `order_datetime` (thời điểm muốn dự đoán).
-    Ứng dụng sẽ lookup lịch sử trong `Data/processed_data.csv`, tạo feature, dùng model trong `Model/` để dự đoán xác suất quay lại trong 30 ngày.
+    "Upload CSV với 2 cột: customer_id, order_datetime (thời điểm muốn dự đoán). "
+    "Ứng dụng sẽ lookup lịch sử trong Data/processed_data.csv, tạo feature, "
+    "dùng model trong Model/ để dự đoán xác suất quay lại trong 30 ngày."
     """)
 
     # Sidebar
