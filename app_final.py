@@ -255,6 +255,7 @@ def predict_return_probability(feature_df: pd.DataFrame, model, preproc, thresho
         return "Duy trì chương trình loyalty"
 
     df["recommendation"] = df.apply(rec, axis=1)
+    df["model_source"] = "best_model.pkl" if used_model else "heuristic_fallback"
     return df
 
 
