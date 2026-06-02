@@ -264,8 +264,17 @@ def main():
     st.title("Dự đoán khả năng khách hàng không quay lại mua hàng ít nhất 30 ngày tới")
 
     st.markdown("""
-    Upload CSV với 2 cột: `customer_id`, `order_datetime` (thời điểm muốn dự đoán).
-    Ứng dụng sẽ lookup lịch sử trong `Data/processed_data.csv`, tạo feature, dùng model trong `Model/` để dự đoán xác suất quay lại trong 30 ngày.
+    ### Quy trình dự đoán
+
+    Người dùng chỉ cần tải lên file CSV chứa customer_id và order_datetime.
+
+    Hệ thống sẽ tự động tra cứu lịch sử giao dịch, xây dựng bộ đặc trưng khách hàng, thực hiện tiền xử lý dữ liệu và sử dụng mô hình Machine Learning để dự đoán xác suất khách hàng quay lại trong 30 ngày tiếp theo.
+
+    Kết quả bao gồm:
+    - Return Probability
+    - Risk Group
+    - Dự đoán quay lại / không quay lại
+    - Báo cáo chi tiết có thể tải xuống
     """)
 
     # Sidebar
