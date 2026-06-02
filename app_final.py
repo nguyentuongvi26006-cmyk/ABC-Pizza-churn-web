@@ -276,7 +276,7 @@ def predict_return_probability(feature_df: pd.DataFrame, model, preproc):
 
 def main():
     st.set_page_config(page_title="Return30d Prediction", layout="wide")
-    st.title("Dự đoán khả năng khách hàng không quay lại mua hàng ít nhất 30 ngày tới")
+    st.title("Hệ thống dự đoán khả năng khách hàng quay lại mua hàng ít nhất trong 30 ngày tới")
 
     st.markdown("""
     ### Quy trình dự đoán
