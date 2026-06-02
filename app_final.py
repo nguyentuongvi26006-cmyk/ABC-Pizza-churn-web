@@ -50,7 +50,7 @@ def compute_features_for_customer(customer_id, ref_date, hist_df):
         cust = cust[cust["order_datetime"] < ref_date]
 
     # các cột tiền/giá trị có thể có nhiều tên
-    money_col = safe_first_existing(["order_value", "amount", "total", "price", "order_amount"], hist_df)
+    money_col = safe_first_existing(["revenue", "order_value", "amount", "total", "price", "order_amount"],hist_df)
     voucher_col = safe_first_existing(["voucher_used", "voucher", "used_voucher", "coupon_used"], hist_df)
     product_col = safe_first_existing(["product_id", "sku", "item_id"], hist_df)
     channel_col = safe_first_existing(["channel", "favorite_channel", "sales_channel"], hist_df)
