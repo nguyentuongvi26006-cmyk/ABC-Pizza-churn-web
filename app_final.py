@@ -27,6 +27,7 @@ def load_processed_data(path=PROCESSED_PATH):
     if "customer_id" not in df.columns:
         st.error("File processed_data.csv phải có cột 'customer_id'.")
         return None
+    df["customer_id"] = df["customer_id"].astype(str).str.strip()
     # chuẩn hoá tên cột thời gian nếu có
     if "order_datetime" in df.columns:
         df["order_datetime"] = pd.to_datetime(df["order_datetime"], errors="coerce")
@@ -43,97 +44,153 @@ def safe_first_existing(col_candidates, df):
 
 
 def compute_features_for_customer(customer_id, ref_date, hist_df):
-    """Tạo các feature cho 1 khách dựa trên lịch sử trước ref_date"""
-    cust = hist_df[hist_df["customer_id"] == customer_id].copy()
+    """Tạo các feature cho 1 khách dựa trên lịch sử trước ref_date.
+
+    Logic được map theo Feature Engineering:
+    - total_orders = COUNT(DISTINCT transaction_id)
+    - avg_order_value = trung bình giá trị mỗi đơn, với order_value = SUM(quantity * unit_price) hoặc SUM(revenue)
+    - spending_last_30d = tổng chi tiêu trong 30 ngày gần nhất
+    """
+    # chuẩn hoá customer_id để tránh lệch do khoảng trắng/kiểu dữ liệu
+    customer_id = str(customer_id).strip()
+    cust = hist_df[hist_df["customer_id"].astype(str).str.strip() == customer_id].copy()
+
     # chỉ lấy giao dịch trước thời điểm tham chiếu
     if "order_datetime" in cust.columns:
+        cust["order_datetime"] = pd.to_datetime(cust["order_datetime"], errors="coerce")
         cust = cust[cust["order_datetime"] < ref_date]
 
-    # các cột tiền/giá trị có thể có nhiều tên
-    money_col = safe_first_existing(["order_value", "amount", "total", "price", "order_amount"], hist_df)
     voucher_col = safe_first_existing(["voucher_used", "voucher", "used_voucher", "coupon_used"], hist_df)
-    product_col = safe_first_existing(["product_id", "sku", "item_id"], hist_df)
+    product_col = safe_first_existing(["product_id", "product_name", "sku", "item_id"], hist_df)
     channel_col = safe_first_existing(["channel", "favorite_channel", "sales_channel"], hist_df)
 
-    total_orders = len(cust)
+    # tính line_value theo dữ liệu thực tế
+    if "revenue" in cust.columns:
+        cust["line_value"] = pd.to_numeric(cust["revenue"], errors="coerce").fillna(0)
+    elif "quantity" in cust.columns and "unit_price" in cust.columns:
+        qty = pd.to_numeric(cust["quantity"], errors="coerce").fillna(0)
+        price = pd.to_numeric(cust["unit_price"], errors="coerce").fillna(0)
+        cust["line_value"] = qty * price
+    else:
+        money_col = safe_first_existing(["order_value", "amount", "total", "price", "order_amount"], hist_df)
+        if money_col is not None:
+            cust["line_value"] = pd.to_numeric(cust[money_col], errors="coerce").fillna(0)
+        else:
+            cust["line_value"] = 0
+
+    # total_orders theo FE: COUNT(DISTINCT transaction_id)
+    if "transaction_id" in cust.columns:
+        total_orders = cust["transaction_id"].nunique()
+    else:
+        total_orders = len(cust)
 
     if total_orders == 0:
         return {
-            "days_since_last_order": np.nan,
+            "days_since_last_order": 999,
             "total_orders": 0,
             "orders_last_30d": 0,
-            "avg_days_between_orders": np.nan,
-            "avg_order_value": np.nan,
+            "avg_days_between_orders": 0,
+            "avg_order_value": 0,
             "spending_last_30d": 0.0,
-            "voucher_usage_rate": np.nan,
-            "recent_activity_drop": np.nan,
-            "unique_products": np.nan,
-            "weekend_order_ratio": np.nan,
-            "max_days_between_orders": np.nan,
-            "favorite_channel": np.nan,
+            "voucher_usage_rate": 0,
+            "recent_activity_drop": 0,
+            "unique_products": 0,
+            "weekend_order_ratio": 0,
+            "max_days_between_orders": 0,
+            "favorite_channel": "Unknown",
         }
 
+    # tạo bảng order-level để tính đúng theo đơn hàng, tránh 1 transaction nhiều dòng bị đếm lặp
+    if "transaction_id" in cust.columns:
+        agg_dict = {
+            "order_datetime": "min",
+            "line_value": "sum",
+        }
+        if voucher_col is not None:
+            agg_dict[voucher_col] = "max"
+        if channel_col is not None:
+            agg_dict[channel_col] = lambda x: x.mode().iloc[0] if not x.mode().empty else "Unknown"
+
+        orders = cust.groupby("transaction_id", as_index=False).agg(agg_dict)
+    else:
+        orders = cust.copy()
+
     # recency
-    last_dt = cust["order_datetime"].max() if "order_datetime" in cust.columns else pd.NaT
-    days_since_last = (ref_date - last_dt).days if pd.notna(last_dt) else np.nan
+    last_dt = orders["order_datetime"].max() if "order_datetime" in orders.columns else pd.NaT
+    days_since_last = (ref_date - last_dt).days if pd.notna(last_dt) else 999
 
     # orders in last 30 days
     window_start = ref_date - timedelta(days=30)
-    orders_last_30d = cust[(cust["order_datetime"] >= window_start) & (cust["order_datetime"] < ref_date)].shape[0] if "order_datetime" in cust.columns else 0
+    if "order_datetime" in orders.columns:
+        orders_last_30d = orders[
+            (orders["order_datetime"] >= window_start) &
+            (orders["order_datetime"] < ref_date)
+        ].shape[0]
+    else:
+        orders_last_30d = 0
 
-    # avg_days_between_orders
-    if "order_datetime" in cust.columns and cust.shape[0] > 1:
-        s = cust.sort_values("order_datetime")["order_datetime"]
+    # avg_days_between_orders và max_days_between_orders theo khoảng cách giữa các đơn
+    if "order_datetime" in orders.columns and orders.shape[0] > 1:
+        s = orders.sort_values("order_datetime")["order_datetime"]
         diffs = s.diff().dt.days.dropna()
-        avg_days_between = diffs.mean()
-        max_days_between = diffs.max()
+        avg_days_between = diffs.mean() if not diffs.empty else 0
+        max_days_between = diffs.max() if not diffs.empty else 0
     else:
-        avg_days_between = np.nan
-        max_days_between = np.nan
+        avg_days_between = 0
+        max_days_between = 0
 
-    # avg order value & spending last 30d
-    if money_col is not None:
-        avg_order_value = cust[money_col].mean()
-        spending_last_30d = cust.loc[(cust["order_datetime"] >= window_start) & (cust["order_datetime"] < ref_date), money_col].sum() if "order_datetime" in cust.columns else 0.0
+    # avg_order_value = trung bình giá trị từng đơn
+    avg_order_value = orders["line_value"].mean() if "line_value" in orders.columns else 0
+
+    # spending_last_30d
+    if "order_datetime" in orders.columns and "line_value" in orders.columns:
+        spending_last_30d = orders.loc[
+            (orders["order_datetime"] >= window_start) &
+            (orders["order_datetime"] < ref_date),
+            "line_value"
+        ].sum()
     else:
-        avg_order_value = np.nan
         spending_last_30d = 0.0
 
-    # voucher usage rate
-    if voucher_col is not None:
+    # voucher usage rate = số đơn có voucher / total_orders
+    if voucher_col is not None and voucher_col in orders.columns:
         try:
-            voucher_rate = cust[voucher_col].astype(float).mean()
+            voucher_rate = pd.to_numeric(orders[voucher_col], errors="coerce").fillna(0).mean()
         except Exception:
-            voucher_rate = np.nan
+            voucher_rate = 0
     else:
-        voucher_rate = np.nan
+        voucher_rate = 0
 
-    # recent activity drop: so sanh orders in last 30d vs previous 30d
+    # recent activity drop: so sánh orders_last_30d với 30 ngày trước đó
     prev_start = ref_date - timedelta(days=60)
     prev_end = ref_date - timedelta(days=30)
-    prev_count = cust[(cust["order_datetime"] >= prev_start) & (cust["order_datetime"] < prev_end)].shape[0] if "order_datetime" in cust.columns else 0
-    recent_drop = (prev_count - orders_last_30d) / prev_count if prev_count > 0 else np.nan
+    if "order_datetime" in orders.columns:
+        prev_count = orders[
+            (orders["order_datetime"] >= prev_start) &
+            (orders["order_datetime"] < prev_end)
+        ].shape[0]
+    else:
+        prev_count = 0
+    recent_drop = (prev_count - orders_last_30d) / prev_count if prev_count > 0 else 0
 
     # unique products
-    if product_col is not None:
+    if product_col is not None and product_col in cust.columns:
         unique_products = cust[product_col].nunique()
     else:
-        unique_products = np.nan
+        unique_products = 0
 
-    # weekend order ratio
-    if "order_datetime" in cust.columns:
-        weekend_ratio = cust["order_datetime"].dt.weekday.isin([5, 6]).mean()
+    # weekend order ratio theo order-level
+    if "order_datetime" in orders.columns:
+        weekend_ratio = orders["order_datetime"].dt.weekday.isin([5, 6]).mean()
     else:
-        weekend_ratio = np.nan
+        weekend_ratio = 0
 
     # favorite channel
-    if channel_col is not None:
-        try:
-            fav = cust[channel_col].mode().iloc[0]
-        except Exception:
-            fav = np.nan
+    if channel_col is not None and channel_col in cust.columns:
+        mode_channel = cust[channel_col].dropna().mode()
+        fav = mode_channel.iloc[0] if not mode_channel.empty else "Unknown"
     else:
-        fav = np.nan
+        fav = "Unknown"
 
     return {
         "days_since_last_order": days_since_last,
@@ -149,7 +206,6 @@ def compute_features_for_customer(customer_id, ref_date, hist_df):
         "max_days_between_orders": max_days_between,
         "favorite_channel": fav,
     }
-
 
 def compute_features(upload_df: pd.DataFrame, hist_df: pd.DataFrame):
     """Tạo feature cho tất cả customer trong upload_df bằng cách lookup history"""
@@ -264,17 +320,8 @@ def main():
     st.title("Dự đoán khả năng khách hàng không quay lại mua hàng ít nhất 30 ngày tới")
 
     st.markdown("""
-    ### Quy trình dự đoán
-
-    Người dùng chỉ cần tải lên file CSV chứa customer_id và order_datetime.
-
-    Hệ thống sẽ tự động tra cứu lịch sử giao dịch, xây dựng bộ đặc trưng khách hàng, thực hiện tiền xử lý dữ liệu và sử dụng mô hình Machine Learning để dự đoán xác suất khách hàng quay lại trong 30 ngày tiếp theo.
-
-    Kết quả bao gồm:
-    - Return Probability
-    - Risk Group
-    - Dự đoán quay lại / không quay lại
-    - Báo cáo chi tiết có thể tải xuống
+    Upload CSV với 2 cột: `customer_id`, `order_datetime` (thời điểm muốn dự đoán).
+    Ứng dụng sẽ lookup lịch sử trong `Data/processed_data.csv`, tạo feature, dùng model trong `Model/` để dự đoán xác suất quay lại trong 30 ngày.
     """)
 
     # Sidebar
@@ -295,6 +342,12 @@ def main():
     except Exception as e:
         st.error(f"Không đọc được file upload: {e}")
         return
+
+    # chuẩn hoá dữ liệu upload
+    if "customer_id" in upload_df.columns:
+        upload_df["customer_id"] = upload_df["customer_id"].astype(str).str.strip()
+    if "order_datetime" in upload_df.columns:
+        upload_df["order_datetime"] = pd.to_datetime(upload_df["order_datetime"], errors="coerce")
 
     # kiểm tra cột
     required = {"customer_id", "order_datetime"}
