@@ -256,7 +256,7 @@ def predict_return_probability(feature_df: pd.DataFrame, model, preproc):
         if p < 0.3:
             return "High Risk"
         elif p < 0.7:
-            return "Medium"
+            return "Medium Risk"
         else:
             return "Loyal"
 
@@ -266,7 +266,7 @@ def predict_return_probability(feature_df: pd.DataFrame, model, preproc):
     def rec(row):
         if row["risk_group"] == "High Risk":
             return "Gửi ưu đãi lớn, gọi CSKH"
-        if row["risk_group"] == "Medium":
+        if row["risk_group"] == "Medium Risk":
             return "Gửi email nhắc nhở + coupon nhỏ"
         return "Duy trì chương trình loyalty"
 
@@ -360,7 +360,10 @@ def main():
     st.plotly_chart(px.pie(result, names="risk_group", title="Risk Group Distribution"), use_container_width=True)
 
     st.subheader("Top khách có return_probability thấp nhất")
-    low = result.sort_values("return_probability", ascending=True).head(20)
+    low = (
+    result.sort_values("return_probability", ascending=True)
+    .drop_duplicates(subset=["customer_id"], keep="first")
+    .head(20))
     st.plotly_chart(px.bar(low, x="customer_id", y="return_probability", color="risk_group", title="Lowest return_probability"), use_container_width=True)
 
     st.subheader("Báo cáo chi tiết")
